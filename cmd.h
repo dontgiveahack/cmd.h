@@ -14,6 +14,11 @@
 #define CMD_MAX_OPTIONS 64
 #endif
 
+/* Maximum number of positional arguments that can be parsed */
+#ifndef CMD_MAX_POSITIONALS
+#define CMD_MAX_POSITIONALS 64
+#endif
+
 /* Option types */
 typedef enum {
 	CMD_OPT_FLAG, /* Flag option */
@@ -38,7 +43,7 @@ typedef struct {
 	void (*fn)(int argc, char **argv); /* Command function pointer */
 } CMD_Cmd;
 
-/* Parser result for error handling */
+/* Parser result codes for error handling */
 typedef enum {
 	CMD_PARSE_OK,
 	CMD_PARSE_UNKNOWN_OPT,
@@ -46,7 +51,14 @@ typedef enum {
 	CMD_PARSE_INVALID_VAL,
 } CMD_ParseResult;
 
-/* find option by short name */
+/* Parser output */
+typedef struct {
+	CMD_ParseResult res;
+	int positionalc;
+	const char * positionals[CMD_MAX_POSITIONALS];
+} CMD_ParseOut;
+
+/* Find option by short name */
 static CMD_Opt *
 cmd_find_short_opt(char sname, CMD_Opt *opts, int optc)
 {
@@ -58,7 +70,7 @@ cmd_find_short_opt(char sname, CMD_Opt *opts, int optc)
 	return NULL;
 }
 
-/* find option by long name */
+/* Find option by long name */
 static CMD_Opt *
 cmd_find_long_opt(const char *lname, CMD_Opt *opts, int optc)
 {
@@ -86,13 +98,24 @@ cmd_is_valid_int(const char *str)
 	return 1;
 }
 
-/* Parse comamnd line options
- * Modifies the options array in-place, setting present and values
- * Returns: parse result status
+/* Parse comamnd line options and positional arguments.
+ * Modifies the options array in-place, setting present and values.
+ * Captures positional arguments into CMD_ParseOut.
+ *
+ * Parameters:
+ *   argc, argv - standard command line args
+ *   opts       - array of CMD_Opt options
+ *   optc       - number of options in the array
+ *
+ * Returns:
+ *   CMD_ParseOut with result code and positional arguments.
  */
-static CMD_ParseResult
+static CMD_ParseOut
 cmd_parse_options(int argc, char **argv, CMD_Opt *opts, int optc)
 {
+	CMD_ParseOut out = {0};
+	out.res = CMD_PARSE_OK;
+
 	// Reset all options
 	for (int i = 0; i < optc; i++) {
 		opts[i].is_provided = 0;
@@ -114,8 +137,10 @@ cmd_parse_options(int argc, char **argv, CMD_Opt *opts, int optc)
 				val = eq_pos + 1;
 			}
 
-			if (!(opt = cmd_find_long_opt(arg + 2, opts, optc)))
-				return CMD_PARSE_UNKNOWN_OPT;
+			if (!(opt = cmd_find_long_opt(arg + 2, opts, optc))) {
+				out.res = CMD_PARSE_UNKNOWN_OPT;
+				return out;
+			}
 
 			if (eq_pos)
 				*eq_pos = '='; // restore original string
@@ -125,15 +150,18 @@ cmd_parse_options(int argc, char **argv, CMD_Opt *opts, int optc)
 				if (i + 1 < argc && argv[i + 1][0] != '-') {
 					val = argv[++i];
 				} else {
-					return CMD_PARSE_MISSING_VAL;
+					out.res = CMD_PARSE_MISSING_VAL;
+					return out;
 				}
 			}
 
 		// Short option
 		} else if (arg[0] == '-' && arg[1] != '\0') {
 			char short_opt = arg[1];
-			if (!(opt = cmd_find_short_opt(short_opt, opts, optc)))
-				return CMD_PARSE_UNKNOWN_OPT;
+			if (!(opt = cmd_find_short_opt(short_opt, opts, optc))) {
+				out.res = CMD_PARSE_UNKNOWN_OPT;
+				return out;
+			}
 
 			if (opt->type != CMD_OPT_FLAG) {
 				// value attached: -svalue
@@ -146,27 +174,37 @@ cmd_parse_options(int argc, char **argv, CMD_Opt *opts, int optc)
 
 				// missing value
 				} else {
-					return CMD_PARSE_MISSING_VAL;
+					out.res = CMD_PARSE_MISSING_VAL;
+					return out;
 				}
 			}
+
+		// Positional argument
+		} else if (out.positionalc < CMD_MAX_POSITIONALS) {
+			out.positionals[out.positionalc++] = arg;
+			continue;
 		}
 
-		opt->is_provided = 1;
-		switch (opt->type) {
-		case CMD_OPT_FLAG: break;
-		case CMD_OPT_STR:
-			opt->str_val = val;
-			break;
-		case CMD_OPT_INT:
-			if (!val || !cmd_is_valid_int(val)) {
-				return CMD_PARSE_INVALID_VAL;
+		// Assign option type when parsed
+		if (opt) {
+			opt->is_provided = 1;
+			switch (opt->type) {
+			case CMD_OPT_FLAG: break;
+			case CMD_OPT_STR:
+				opt->str_val = val;
+				break;
+			case CMD_OPT_INT:
+				if (!val || !cmd_is_valid_int(val)) {
+					out.res = CMD_PARSE_INVALID_VAL;
+					return out;
+				}
+				opt->int_val = atoi(val);
+				break;
 			}
-			opt->int_val = atoi(val);
-			break;
 		}
 	}
 
-	return CMD_PARSE_OK;
+	return out;
 }
 
 /* Find command by name */

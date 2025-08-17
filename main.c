@@ -13,9 +13,9 @@ cmd_foo(int argc, char **argv)
 		{ .sname = 'n', .lname = "number", .type = CMD_OPT_INT  },
 	};
 
-	CMD_ParseResult res = cmd_parse_options(argc, argv, opts, 3);
-	if (res != CMD_PARSE_OK) {
-		switch (res) {
+	CMD_ParseOut out = cmd_parse_options(argc, argv, opts, 3);
+	if (out.res != CMD_PARSE_OK) {
+		switch (out.res) {
 		case CMD_PARSE_UNKNOWN_OPT: printf("Error: Unknown option\n"); break;
 		case CMD_PARSE_MISSING_VAL: printf("Error: Missing option value\n"); break;
 		case CMD_PARSE_INVALID_VAL: printf("Error: Invalid option value\n"); break;
@@ -40,6 +40,14 @@ cmd_foo(int argc, char **argv)
 		int num_val = opts[2].int_val;
 		printf("Number value: %d\n", num_val);
 	}
+
+	// positionals
+	if (out.positionalc > 0) {
+		printf("Positional arguments:\n");
+		for (int i = 0; i < out.positionalc; i++) {
+			printf("\t[%d] %s\n", i, out.positionals[i]);
+		}
+	}
 }
 
 void
@@ -47,7 +55,7 @@ cmd_help()
 {
 	printf("Usage: program <command> [options]\n\n");
 	printf("Commands:\n");
-	printf("  foo   Example command with various options\n");
+	printf("  foo   Example command with various options and positionals\n");
 	printf("  help  Show this message\n");
 }
 

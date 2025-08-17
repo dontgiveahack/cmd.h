@@ -10,6 +10,7 @@ A tiny, single-header, zero-allocation command line parser in C99.
 - **Git-like interface**: Support for subcommands and options
 - **Multiple option types**: Flags, strings, and integers
 - **Short and long options**: `-f` and `--flag` both supported
+- **Positional arguments**: Collect arguments that are not options
 - **Error handling**: Clear error reporting for invalid usage
 
 ## Quick Start
@@ -23,7 +24,8 @@ void cmd_hello(int argc, char **argv) {
         { .sname = 'v', .lname = "verbose", .type = CMD_OPT_FLAG },
     };
     
-    if (cmd_parse_options(argc, argv, opts, 2) != CMD_PARSE_OK) {
+    CMD_ParseOut out = cmd_parse_options(argc, argv, opts, 2);
+    if (out.res != CMD_PARSE_OK) {
         printf("Invalid options\n");
         return;
     }
@@ -33,6 +35,13 @@ void cmd_hello(int argc, char **argv) {
     
     if (opts[1].is_provided) {
         printf("Verbose mode enabled\n");
+    }
+
+    if (out.positionalc > 0) {
+        printf("Positional args:\n");
+        for (int i = 0; i < out.positionalc; i++) {
+            printf("\t[%d] %s\n", i, out.positionals[i]);
+        }
     }
 }
 
@@ -65,6 +74,10 @@ int main(int argc, char *argv[]) {
 # Integer option
 ./program foo --number=42
 ./program foo -n 42
+
+# Positional arguments
+./program hello Bob
+./program hello --verbose Bob Alice
 ```
 
 ## API Reference
@@ -113,18 +126,27 @@ typedef enum {
 } CMD_ParseResult;
 ```
 
+### Parse Output
+```c
+typedef struct {
+    CMD_ParseResult res; // Result of parsing
+    int positionalc;     // Number of positional arguments
+    char **positionals;  // Array of positional arguments
+} CMD_ParseOut;
+```
+
 ### Core Functions
 
-#### `cmd_parse_options(int argc, char **argv, CMD_Opt *opts, int optc)`
+#### `CMD_ParseOut cmd_parse_options(int argc, char **argv, CMD_Opt *opts, int optc)`
 
 Parse command line options and populate the options array.
 
 - `argc, argv`: Command line arguments
 - `opts`: Array of option definitions
 - `optc`: Number of options in the array
-- Returns: `CMD_ParseResult` indicating success or error type
+- Returns: `CMD_ParseOut` containing result and positional arguments
 
-#### `cmd_dispatch(int argc, char **argv, const CMD_Cmd *commands)`
+#### `int cmd_dispatch(int argc, char **argv, const CMD_Cmd *commands)`
 
 Find and execute the appropriate command.
 
@@ -136,10 +158,12 @@ Find and execute the appropriate command.
 
 ### Maximum Options
 
-By default, the library supports up to 64 options. You can change this by defining `CMD_MAX_OPTIONS` before including the header:
+By default, the library supports up to 64 options and positional arguments.
+You can change this by defining `CMD_MAX_OPTIONS` and `CMD_MAX_POSITIONALS` before including the header:
 
 ```c
 #define CMD_MAX_OPTIONS 32
+#define CMD_MAX_POSITIONALS 32
 #include "cmd.h"
 ```
 
@@ -168,8 +192,6 @@ case CMD_PARSE_INVALID_VAL:  printf("Invalid value\n"); break;
 
 - No support for combined short options (e.g., `-abc` for `-a -b -c`)
 - No built-in help generation (you implement your own)
-- No support for optional arguments
-- No support for variadic arguments
 - String values point to original argv memory (no copying)
 
 ## License
